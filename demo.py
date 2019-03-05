@@ -12,26 +12,29 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    # result folder
+    # Resampling filter as found here: https://pillow.readthedocs.io/en/stable/handbook/concepts.html#concept-filters
+    resampling_filter = Image.LANCZOS
+    
+    # Result folder
     os.makedirs(args.output_folder, exist_ok=True)
 
-    # load test image list
+    # Load test image list
     filename = 'data/list.txt'
     with open(filename, 'r') as f:
         path_src = [line.rstrip() for line in f.readlines()]
 
-    # set up caffe
+    # Set up caffe
     caffe.set_device(0)
     caffe.set_mode_gpu()
 
-    # load net
+    # Load net
     net = caffe.Net('model/deploy_512.prototxt', 'model/harmonize_iter_200000.caffemodel', caffe.TEST)
 
     size = np.array([512, 512])
     for idx, path_ in enumerate(path_src):
-        # load image, switch to BGR, subtract mean, and make dims C x H x W for Caffe
+        # Load image, switch to BGR, subtract mean, and make dims C x H x W for Caffe
         im_ori = Image.open('data/image/' + path_)
-        im = im_ori.resize(size, Image.ANTIALIAS)
+        im = im_ori.resize(size, resampling_filter)
         im = np.array(im, dtype=np.float32)
         if im.shape[2] == 4:
             im = im[:, :, 0:3]
@@ -41,7 +44,7 @@ if __name__ == "__main__":
         im = im.transpose((2, 0, 1))
 
         mask = Image.open('data/mask/' + path_)
-        mask = mask.resize(size, Image.ANTIALIAS)
+        mask = mask.resize(size, resampling_filter)
         mask = np.array(mask, dtype=np.float32)
         if len(mask.shape) == 3:
             mask = mask[:, :, 0]
@@ -49,14 +52,14 @@ if __name__ == "__main__":
         mask -= 128.0
         mask = mask[np.newaxis, ...]
 
-        # shape for input (data blob is N x C x H x W), set data
+        # Shape for input (data blob is N x C x H x W), set data
         net.blobs['data'].reshape(1, *im.shape)
         net.blobs['data'].data[...] = im
 
         net.blobs['mask'].reshape(1, *mask.shape)
         net.blobs['mask'].data[...] = mask
 
-        # run net for prediction
+        # Run net for prediction
         net.forward()
         out = net.blobs['output-h'].data[0]
         out = out.transpose((1, 2, 0))
@@ -68,13 +71,13 @@ if __name__ == "__main__":
         pos_idx = out > 255.0
         out[pos_idx] = 255.0
 
-        # save result
+        # Save result
         result = out.astype(np.uint8)
         result = Image.fromarray(result)
         end = path_.find('.')
 
         if args.juxtaposition_original:
-            im = im_ori.resize(size, Image.ANTIALIAS);
+            im = im_ori.resize(size, resampling_filter);
             im = np.array(im, dtype=np.uint8)
             if im.shape[2] == 4:
                im = im[:, :, 0:3]
